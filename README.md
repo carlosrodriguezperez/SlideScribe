@@ -31,11 +31,10 @@
   sudo apt-get update
   sudo apt-get install poppler-utils
   ```
-* **Windows (via Chocolatey):**
-  ```powershell
-  choco install poppler
-  ```
-  *(Or download the binaries manually and add the `/bin` directory to your System PATH).*
+* **Windows:**
+  1. Download the latest `.zip` release from [oschwartz10612/poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases/). *(Note: Ensure you have the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) installed, or Poppler will crash silently).*
+  2. Extract the contents to a secure location (e.g., `C:\Program Files\poppler`).
+  3. Add the `bin` directory (e.g., `C:\Program Files\poppler\Library\bin`) to your System's `PATH` environment variable.
 
 ### 2. Install the Package
 
@@ -46,6 +45,9 @@ git clone https://github.com/carlosrodriguezperez/SlideScribe-CLI.git
 cd SlideScribe-CLI
 pip install -e .
 ```
+
+> [!NOTE]
+> On Windows, if the `slidescribe` command is not recognized after running the installation, your Python `Scripts` folder may not be in your `PATH`.
 
 ### 3. API Key Configuration
 
