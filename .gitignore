@@ -41,8 +41,6 @@ venv.bak/
 *.png
 *.md
 !README.md
-!RULES.md
-!PRD.md
 
 # Virtual environments
 .venv
