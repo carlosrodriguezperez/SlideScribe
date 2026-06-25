@@ -115,3 +115,10 @@ Here we process `BadSlides_LatexInImages.pdf` (using default settings). This sli
 ```bash
 slidescribe showcase/BadSlides_LatexInImages.pdf
 ```
+
+---
+
+## 👨‍💻 Author
+
+**Carlos Rodríguez Pérez**  
+- GitHub: [@carlosrodriguezperez](https://github.com/carlosrodriguezperez)
