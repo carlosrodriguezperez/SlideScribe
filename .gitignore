@@ -38,9 +38,6 @@ venv.bak/
 
 # Project specifics explicitly forbidden by RULES.md
 *.pdf
-*.png
-*.md
-!README.md
 
 # Virtual environments
 .venv
