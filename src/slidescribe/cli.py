@@ -111,6 +111,13 @@ def extract_slides(pdf_path: Path):
         sys.exit(1)
     
     output_dir = pdf_path.parent / f"{pdf_path.stem}_slides"
+    
+    if output_dir.exists() and output_dir.is_dir():
+        existing_images = list(output_dir.glob("slide_*.png"))
+        if existing_images:
+            print(f"Directory '{output_dir.name}' already exists with {len(existing_images)} slides. Skipping PDF extraction.")
+            return len(existing_images)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Rasterizing '{pdf_path.name}'...")
