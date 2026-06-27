@@ -38,23 +38,45 @@
 
 ### 2. Install the Package
 
-Clone the repository and install it in editable mode:
+To run `slidescribe` globally from any terminal, it is highly recommended to install it using [`pipx`](https://pipx.pypa.io/). This isolates the tool's dependencies while exposing the command system-wide.
 
 ```bash
 git clone https://github.com/carlosrodriguezperez/SlideScribe-CLI.git
 cd SlideScribe-CLI
-pip install -e .
+pipx install -e .
 ```
 
 > [!NOTE]
-> On Windows, if the `slidescribe` command is not recognized after running the installation, your Python `Scripts` folder may not be in your `PATH`.
+> If you don't have `pipx` installed, you can install it via `pip install pipx` and then run `pipx ensurepath`. If you prefer a local project installation, you can use `pip install -e .` instead, but you will need to activate the virtual environment each time.
 
 ### 3. API Key Configuration
 
-Create a `.env` file in the root of the project (or in your working directory) and insert your Gemini API Key:
+You can configure your Gemini API key globally using one of two professional methods:
 
+#### Option A: Environment Variable (Recommended)
+
+**For Linux/macOS:**
+Export the variable directly in your shell configuration file (e.g., `~/.bashrc` or `~/.zshrc`):
+```bash
+export GEMINI_API_KEY="your_gemini_api_key_here"
+```
+
+**For Windows:**
+Open PowerShell and set the environment variable permanently for your user:
+```powershell
+[System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'your_gemini_api_key_here', 'User')
+```
+*(You will need to restart your terminal for this to take effect).*
+
+#### Option B: Configuration File
+Create a `.env` configuration file. SlideScribe-CLI will look for it in the following locations:
+1. The current working directory (`./.env`)
+2. Your home directory (`~/.slidescribe.env`, which is `C:\Users\YourName\.slidescribe.env` on Windows)
+3. Your standard config directory (`~/.config/slidescribe/.env`)
+
+Insert your key into the file like this:
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY="your_gemini_api_key_here"
 ```
 
 ---
@@ -76,7 +98,7 @@ slidescribe /path/to/my_lectures/Lec_05_Machine_Learning.pdf
 | `--no-explanations` | Skips generating AI explanations, extracting text & LaTeX equations extremely fast. | `False` |
 | `--no-contents` | Skips writing the transcribed slide contents to the markdown output. | `False` |
 | `-l`, `--language` | The language in which to generate the AI explanations. | `English` |
-| `--version` | Prints the version number (`0.1.0`) and exits. | N/A |
+| `--version` | Prints the version number (`0.1.1`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
 #### Examples

@@ -2,6 +2,7 @@ import argparse
 import sys
 import os
 import time
+import dotenv
 from pathlib import Path
 import pdf2image
 from pdf2image.exceptions import PDFInfoNotInstalledError
@@ -13,14 +14,15 @@ from PIL import Image
 from slidescribe import __version__
 
 def load_env():
-    env_path = Path(".env")
-    if env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, val = line.split("=", 1)
-                    os.environ[key.strip()] = val.strip()
+    env_paths = [
+        Path(".env"),
+        Path.home() / ".slidescribe.env",
+        Path.home() / ".config" / "slidescribe" / ".env"
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            dotenv.load_dotenv(env_path)
 
 class SlideParsed(BaseModel):
     slide_number: int
