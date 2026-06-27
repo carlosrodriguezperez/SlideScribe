@@ -171,16 +171,17 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
         for parsed in all_parsed_slides:
             i = parsed.slide_number
             slide_file_name = f"slide_{i}.png"
+            
             f.write(f"## Slide {i}: {parsed.slide_title}\n\n")
-            f.write(f"![Slide {i} View](./{output_dir_name}/{slide_file_name})\n\n")
-            if not no_contents:
-                f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
-            f.write("---\n")
+            
             if not no_explanations:
                 f.write(f"**🤖 AI Synthesized Explanation:**\n*{parsed.synthesized_explanation}*\n\n")
-                f.write("***\n\n")
-            else:
-                f.write("***\n\n")
+                
+            if not no_contents:
+                f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
+                
+            f.write(f"![Slide {i} View](./{output_dir_name}/{slide_file_name})\n\n")
+            f.write("***\n\n")
             
     print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
 
