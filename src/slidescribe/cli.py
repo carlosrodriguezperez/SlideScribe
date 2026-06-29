@@ -54,11 +54,21 @@ def analyze_slides(
         "since explanations are disabled, do not write explanations and set the synthesized_explanation field to an empty string."
     )
     
+    system_instruction = (
+        "Analyze the slide images provided and transcribe their contents accurately into clean, well-formatted Markdown and LaTeX, adhering to these guidelines:\n"
+        "   - **Structure**: Organize the transcribed content using Markdown lists (bulleted `-` or numbered `1.`), bolding, and headers (`####`) to faithfully represent the slide's original hierarchy and layout. Do not output raw, flat blocks of text.\n"
+        "   - **Paragraphs**: Separate distinct ideas, bullet points, or sections with double newlines (using empty lines between them) to prevent the Markdown renderer from collapsing them into a single line.\n"
+        "   - **Inline Math**: Use inline LaTeX (`$...$`) for individual variables, small expressions, and symbols (e.g., `$x$`, `$\\mu$`). Do not add spaces around the inner delimiters (e.g., write `$x$` instead of `$ x $`).\n"
+        "   - **Block Math**: Use block LaTeX (`$$...$$`) on their own lines for complex, multiline, or prominent equations. Ensure there is an empty line before and after the block math so it renders correctly.\n"
+        "   - **Underscores & Formatting**: Ensure underscores (`_`) used for subscripts (e.g., `$x_{t}$` or `$\\mu_{A}$`) are always enclosed within math delimiters to avoid conflicts with Markdown italicization.\n"
+        "   - **No Meta/Descriptions**: Do not include physical descriptions of images, diagrams, or UI elements (like \"[Image of...]\") in the transcription unless they contain readable text or formulas. Exclude header/footer noise (e.g. copyright notices, slide numbers) if they do not contribute to the educational content."
+    )
+
     prompt = (
-        f"You are given all the slides of the presentation for global context to understand the structure of the lecture. "
-        f"Please analyze slides {start_slide} to {end_slide} (inclusive, 1-indexed based on their order in the list). "
+        f"You are given all the slides of the presentation for global context to understand the structure of the lecture.\n"
+        f"Please analyze slides {start_slide} to {end_slide} (inclusive, 1-indexed based on their order in the list).\n\n"
         f"For each of these specified slides: extract the title, transcribe all text and mathematical formulas accurately "
-        f"into clean Markdown/LaTeX ($...$ or $$...$$), and {explanation_instruction}"
+        f"into the transcribed_content field following the system guidelines, and {explanation_instruction}"
     )
     contents.append(prompt)
     
@@ -72,6 +82,7 @@ def analyze_slides(
                     response_mime_type="application/json",
                     response_schema=SlideDeck,
                     temperature=0.2,
+                    system_instruction=system_instruction,
                 ),
             )
             
