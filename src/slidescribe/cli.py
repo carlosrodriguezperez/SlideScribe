@@ -39,7 +39,8 @@ def analyze_slides(
     end_slide: int, 
     model_name: str, 
     no_explanations: bool,
-    language: str = "English"
+    language: str = "English",
+    transcription_language: str = "English"
 ) -> list[SlideParsed]:
     client = genai.Client()
     print(f"Analyzing slides {start_slide} to {end_slide} using {model_name}...")
@@ -49,13 +50,14 @@ def analyze_slides(
         contents.append(Image.open(path))
         
     explanation_instruction = (
-        f"provide a 1-2 paragraph textbook-style explanation of the concepts shown in {language}."
+        f"provide a 1-2 paragraph highly technical, detailed, and mathematically rigorous (where applicable) explanation of the concepts shown in {language}. Focus on the underlying theory, formal definitions, and mechanisms."
         if not no_explanations else
         "since explanations are disabled, do not write explanations and set the synthesized_explanation field to an empty string."
     )
     
     system_instruction = (
         "Analyze the slide images provided and transcribe their contents accurately into clean, well-formatted Markdown and LaTeX, adhering to these guidelines:\n"
+        f"   - **Language**: All text, titles, and headers in the `transcribed_content` and `slide_title` fields must be written in {transcription_language}. If the original text on the slides is in a different language, translate it into {transcription_language} while maintaining the exact meaning.\n"
         "   - **Structure**: Organize the transcribed content using Markdown lists (bulleted `-` or numbered `1.`), bolding, and headers (`####`) to faithfully represent the slide's original hierarchy and layout. Do not output raw, flat blocks of text.\n"
         "   - **Paragraphs**: Separate distinct ideas, bullet points, or sections with double newlines (using empty lines between them) to prevent the Markdown renderer from collapsing them into a single line.\n"
         "   - **Inline Math**: Use inline LaTeX (`$...$`) for individual variables, small expressions, and symbols (e.g., `$x$`, `$\\mu$`). Do not add spaces around the inner delimiters (e.g., write `$x$` instead of `$ x $`).\n"
@@ -145,7 +147,7 @@ def extract_slides(pdf_path: Path):
     print(f"Successfully saved {len(images)} slides to '{output_dir}'.")
     return len(images)
 
-def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explanations: bool, language: str = "English", no_contents: bool = False):
+def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explanations: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
     output_md = pdf_path.with_suffix(".md")
     output_dir_name = f"{pdf_path.stem}_slides"
     
@@ -167,7 +169,7 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
     for chunk_start in range(1, num_slides + 1, chunk_size):
         chunk_end = min(chunk_start + chunk_size - 1, num_slides)
         try:
-            parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, language)
+            parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, language, transcription_language)
             all_parsed_slides.extend(parsed_chunk)
         except Exception as e:
             print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
@@ -220,11 +222,23 @@ def main():
         help="Skip writing the transcribed slide contents to the markdown file."
     )
     parser.add_argument(
+        "--explanation-language",
         "--language",
+        "-el",
         "-l",
+        dest="language",
         type=str,
         default="English",
         help="The language in which to generate the AI explanations (default: English)."
+    )
+    parser.add_argument(
+        "--transcription-language",
+        "-tl",
+        "-t",
+        dest="transcription_language",
+        type=str,
+        default="English",
+        help="The language in which to transcribe the slide contents (default: English)."
     )
     parser.add_argument(
         "target",
@@ -243,7 +257,7 @@ def main():
         load_env()
         check_poppler()
         num_slides = extract_slides(target_path)
-        compile_markdown(target_path, num_slides, args.model, args.no_explanations, args.language, args.no_contents)
+        compile_markdown(target_path, num_slides, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
         sys.exit(0)
     
     parser.print_help()

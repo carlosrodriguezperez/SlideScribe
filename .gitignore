@@ -36,8 +36,11 @@ ENV/
 env.bak/
 venv.bak/
 
-# Project specifics explicitly forbidden by RULES.md
+# Project specifics
 *.pdf
+*_slides/
+/*.md
+!showcase/**/*.md
 
 # Virtual environments
 .venv

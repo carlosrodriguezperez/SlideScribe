@@ -13,8 +13,8 @@
 * **Zero-UI Philosophy:** Pure terminal-based execution. Perfect for automation, scripting, and piping.
 * **Global Context-Aware Chunking:** Loads and transmits all slide images in every request to provide Gemini with complete lecture context, while chunking the output generation (in batches of 15 slides) to safely stay within Gemini's 8,192 output token limit.
 * **OCR & LaTeX Salvaging:** Automatically recovers blurry slide math equations and represents them in standard LaTeX formatting (both inline `$ ... $` and block `$$ ... $$`).
-* **Textbook-Style Synthesis:** Generates a 1-2 paragraph explanatory text for each slide to synthesize core academic concepts, even if the slides themselves are visually sparse.
-* **CLI Flexibility:** Change models dynamically or disable explanations entirely to run super fast.
+* **Rigorous Technical Explanations:** Generates highly technical, detailed, and mathematically rigorous explanations for each slide to synthesize core academic concepts, even if the slides themselves are visually sparse.
+* **CLI & Language Flexibility:** Customize both the explanation and transcription languages dynamically, change models, or disable explanations entirely.
 * **Resilient Network Architecture:** Automatically retries API calls (up to 3 times with exponential backoff) to handle transient internet or API connectivity issues seamlessly.
 * **Relative Path Immortality:** Built entirely with `pathlib`. Slide assets and Markdown notes sit side-by-side using forward slashes, ensuring they stay perfectly linked on GitHub, Google Drive, Obsidian, or other devices.
 
@@ -97,7 +97,8 @@ slidescribe /path/to/my_lectures/Lec_05_Machine_Learning.pdf
 | `--model` | Dynamic Gemini model selection (e.g. `gemini-2.5-pro` or `gemini-2.5-flash`). | `gemini-2.5-flash` |
 | `--no-explanations` | Skips generating AI explanations, extracting text & LaTeX equations extremely fast. | `False` |
 | `--no-contents` | Skips writing the transcribed slide contents to the markdown output. | `False` |
-| `-l`, `--language` | The language in which to generate the AI explanations. | `English` |
+| `-el`, `--explanation-language` | The language in which to generate the AI explanations (alias: `-l`, `--language`). | `English` |
+| `-tl`, `--transcription-language` | The language in which to transcribe the slide contents (alias: `-t`). | `English` |
 | `--version` | Prints the version number (`0.1.1`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
@@ -110,7 +111,7 @@ slidescribe Lec_05_Machine_Learning.pdf --model gemini-2.5-pro
 
 **Run with explanations generated in Spanish:**
 ```bash
-slidescribe Lec_05_Machine_Learning.pdf --language Spanish
+slidescribe Lec_05_Machine_Learning.pdf --explanation-language Spanish
 ```
 
 **Run ultra-fast transcription (no explanations, saves tokens/cost):**
@@ -129,7 +130,7 @@ In the showcase folder there are two examples of the power of `SlideScribe-CLI`:
 Here we process `BadSlides_LackingExplanations.pdf`, which lacks explanations on the slides. We request the AI to synthesize the missing explanations in Galician, and we use `--no-contents` to skip printing the minimal slide text:
 
 ```bash
-slidescribe showcase/BadSlides_LackingExplanations.pdf --language Galician --no-contents
+slidescribe showcase/BadSlides_LackingExplanations.pdf --explanation-language Galician --no-contents
 ```
 
 ### 2. Writing complex math formulas
