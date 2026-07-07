@@ -109,8 +109,6 @@ def check_poppler():
         print("Error: 'poppler' is not installed or not in PATH.", file=sys.stderr)
         if sys.platform.startswith("linux"):
             print("Hint: Install it via 'sudo apt-get install poppler-utils'", file=sys.stderr)
-        elif sys.platform == "win32":
-            print("Hint: Install it via 'choco install poppler' or download binaries and add to PATH.", file=sys.stderr)
         else:
             print("Hint: Install poppler for your OS.", file=sys.stderr)
         sys.exit(1)

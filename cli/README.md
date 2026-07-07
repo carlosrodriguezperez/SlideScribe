@@ -31,10 +31,9 @@
   sudo apt-get update
   sudo apt-get install poppler-utils
   ```
-* **Windows:**
-  1. Download the latest `.zip` release from [oschwartz10612/poppler-windows](https://github.com/oschwartz10612/poppler-windows/releases/). *(Note: Ensure you have the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) installed, or Poppler will crash silently).*
-  2. Extract the contents to a secure location (e.g., `C:\Program Files\poppler`).
-  3. Add the `bin` directory (e.g., `C:\Program Files\poppler\Library\bin`) to your System's `PATH` environment variable.
+
+> [!NOTE]
+> `SlideScribe-CLI` is designed primarily for Linux. Windows users can run it via WSL or by using the legacy `support/windows` branch.
 
 ### 2. Install the Package
 
@@ -61,17 +60,10 @@ Export the variable directly in your shell configuration file (e.g., `~/.bashrc`
 export GEMINI_API_KEY="your_gemini_api_key_here"
 ```
 
-**For Windows:**
-Open PowerShell and set the environment variable permanently for your user:
-```powershell
-[System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'your_gemini_api_key_here', 'User')
-```
-*(You will need to restart your terminal for this to take effect).*
-
 #### Option B: Configuration File
 Create a `.env` configuration file. SlideScribe-CLI will look for it in the following locations:
 1. The current working directory (`./.env`)
-2. Your home directory (`~/.slidescribe.env`, which is `C:\Users\YourName\.slidescribe.env` on Windows)
+2. Your home directory (`~/.slidescribe.env`)
 3. Your standard config directory (`~/.config/slidescribe/.env`)
 
 Insert your key into the file like this:
@@ -99,7 +91,7 @@ slidescribe /path/to/my_lectures/Lec_05_Machine_Learning.pdf
 | `--no-contents` | Skips writing the transcribed slide contents to the markdown output. | `False` |
 | `-el`, `--explanation-language` | The language in which to generate the AI explanations (alias: `-l`, `--language`). | `English` |
 | `-tl`, `--transcription-language` | The language in which to transcribe the slide contents (alias: `-t`). | `English` |
-| `--version` | Prints the version number (`0.1.1`) and exits. | N/A |
+| `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
 #### Examples
