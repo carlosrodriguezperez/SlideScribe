@@ -123,13 +123,11 @@ def check_poppler():
     except Exception:
         pass
 
-def extract_slides(pdf_path: Path):
+def extract_slides(pdf_path: Path, output_dir: Path):
     pdf_path = pdf_path.resolve()
     if not pdf_path.exists() or not pdf_path.is_file():
         print(f"Error: Target file '{pdf_path}' does not exist or is not a file.", file=sys.stderr)
         sys.exit(1)
-    
-    output_dir = pdf_path.parent / f"{pdf_path.stem}_slides"
     
     if output_dir.exists() and output_dir.is_dir():
         existing_images = list(output_dir.glob("slide_*.png"))
@@ -153,10 +151,7 @@ def extract_slides(pdf_path: Path):
     print(f"Successfully saved {len(images)} slides to '{output_dir}'.")
     return len(images)
 
-def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explanations: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
-    output_md = pdf_path.with_suffix(".md")
-    output_dir_name = f"{pdf_path.stem}_slides"
-    
+def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
     print(f"Compiling Markdown to '{output_md.name}'...")
     
     # Collect all image paths dynamically from the slides directory
@@ -190,7 +185,7 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
     all_parsed_slides.sort(key=lambda s: s.page_number)
 
     with open(output_md, "w", encoding="utf-8") as f:
-        f.write(f"# Lecture Notes: {pdf_path.stem}\n\n***\n\n")
+        f.write(f"# Lecture Notes: {output_md.stem}\n\n***\n\n")
         
         for parsed in all_parsed_slides:
             idx = parsed.page_number
@@ -207,7 +202,7 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
             if not no_contents:
                 f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
                 
-            f.write(f"![Slide {parsed.slide_number} View](./{output_dir_name}/{slide_file_name})\n\n")
+            f.write(f"![Slide {parsed.slide_number} View](./{output_dir.name}/{slide_file_name})\n\n")
             f.write("***\n\n")
             
     print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
@@ -261,6 +256,12 @@ def main():
         help="Only extract PDF pages as images and exit without calling the model."
     )
     parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help="Custom destination name or path for the compiled Markdown and slides folder."
+    )
+    parser.add_argument(
         "target",
         nargs="?",
         help="Path to the source PDF file."
@@ -276,10 +277,22 @@ def main():
         target_path = Path(args.target)
         load_env()
         check_poppler()
-        num_slides = extract_slides(target_path)
+        
+        # Calculate output paths
+        if args.output:
+            out_base = Path(args.output)
+            if out_base.suffix.lower() == ".md":
+                out_base = out_base.with_suffix("")
+            output_md = out_base.with_suffix(".md")
+            output_dir = out_base.parent / f"{out_base.name}_slides"
+        else:
+            output_md = target_path.with_suffix(".md")
+            output_dir = target_path.parent / f"{target_path.stem}_slides"
+            
+        num_slides = extract_slides(target_path, output_dir)
         if args.extract_only:
             sys.exit(0)
-        compile_markdown(target_path, num_slides, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
+        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
         sys.exit(0)
     
     parser.print_help()

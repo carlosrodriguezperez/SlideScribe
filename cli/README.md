@@ -92,6 +92,7 @@ slidescribe /path/to/my_lectures/Lec_05_Machine_Learning.pdf
 | `-el`, `--explanation-language` | The language in which to generate the AI explanations (alias: `-l`, `--language`). | `English` |
 | `-tl`, `--transcription-language` | The language in which to transcribe the slide contents (alias: `-t`). | `English` |
 | `-eo`, `--extract-only` | Only extract PDF pages as images and exit without calling the model. | `False` |
+| `-o`, `--output` | Custom destination name or path for the compiled Markdown and slides folder. | `None` |
 | `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
