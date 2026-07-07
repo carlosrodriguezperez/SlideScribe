@@ -7,7 +7,7 @@ import dotenv
 from pathlib import Path
 import pdf2image
 from pdf2image.exceptions import PDFInfoNotInstalledError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -26,7 +26,12 @@ def load_env():
             dotenv.load_dotenv(env_path)
 
 class SlideParsed(BaseModel):
-    slide_number: int
+    page_number: int = Field(
+        description="The 1-based index of this slide in the provided list of images (e.g. 1 for the first image, 2 for the second, etc.)."
+    )
+    slide_number: int = Field(
+        description="The actual slide number printed on the slide itself, if visible. If not visible, use page_number."
+    )
     slide_title: str
     transcribed_content: str
     synthesized_explanation: str
@@ -47,7 +52,8 @@ def analyze_slides(
     print(f"Analyzing slides {start_slide} to {end_slide} using {model_name}...")
     
     contents = []
-    for path in image_paths:
+    for i, path in enumerate(image_paths, start=1):
+        contents.append(f"Image {i}:")
         contents.append(Image.open(path))
         
     explanation_instruction = (
@@ -69,8 +75,9 @@ def analyze_slides(
 
     prompt = (
         f"You are given all the slides of the presentation for global context to understand the structure of the lecture.\n"
-        f"Please analyze slides {start_slide} to {end_slide} (inclusive, 1-indexed based on their order in the list).\n\n"
-        f"For each of these specified slides: extract the title, transcribe all text and mathematical formulas accurately "
+        f"Please analyze the images labeled 'Image {start_slide}' to 'Image {end_slide}' (inclusive, based on the labels provided above).\n\n"
+        f"For each of these specified slides: set the `page_number` field in the response schema to the number corresponding to its label "
+        f"(e.g., for 'Image 3', set `page_number` to 3), extract the title, transcribe all text and mathematical formulas accurately "
         f"into the transcribed_content field following the system guidelines, and {explanation_instruction}"
     )
     contents.append(prompt)
@@ -179,17 +186,20 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
             print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
             return
 
-    # Sort parsed slides by slide_number just in case they are out of order
-    all_parsed_slides.sort(key=lambda s: s.slide_number)
+    # Sort parsed slides by page_number just in case they are out of order
+    all_parsed_slides.sort(key=lambda s: s.page_number)
 
     with open(output_md, "w", encoding="utf-8") as f:
         f.write(f"# Lecture Notes: {pdf_path.stem}\n\n***\n\n")
         
         for parsed in all_parsed_slides:
-            i = parsed.slide_number
-            slide_file_name = f"slide_{i}.png"
+            idx = parsed.page_number
+            if 1 <= idx <= len(image_paths):
+                slide_file_name = image_paths[idx - 1].name
+            else:
+                slide_file_name = f"slide_{parsed.slide_number}.png"
             
-            f.write(f"## Slide {i}: {parsed.slide_title}\n\n")
+            f.write(f"## Slide {parsed.slide_number}: {parsed.slide_title}\n\n")
             
             if not no_explanations:
                 f.write(f"**🤖 AI Synthesized Explanation:**\n*{parsed.synthesized_explanation}*\n\n")
@@ -197,7 +207,7 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
             if not no_contents:
                 f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
                 
-            f.write(f"![Slide {i} View](./{output_dir_name}/{slide_file_name})\n\n")
+            f.write(f"![Slide {parsed.slide_number} View](./{output_dir_name}/{slide_file_name})\n\n")
             f.write("***\n\n")
             
     print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
