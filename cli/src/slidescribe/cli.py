@@ -239,6 +239,12 @@ def main():
         help="The language in which to transcribe the slide contents (default: English)."
     )
     parser.add_argument(
+        "--extract-only",
+        "-eo",
+        action="store_true",
+        help="Only extract PDF pages as images and exit without calling the model."
+    )
+    parser.add_argument(
         "target",
         nargs="?",
         help="Path to the source PDF file."
@@ -255,6 +261,8 @@ def main():
         load_env()
         check_poppler()
         num_slides = extract_slides(target_path)
+        if args.extract_only:
+            sys.exit(0)
         compile_markdown(target_path, num_slides, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
         sys.exit(0)
     
