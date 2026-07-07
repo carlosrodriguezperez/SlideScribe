@@ -75,23 +75,34 @@ GEMINI_API_KEY="your_gemini_api_key_here"
 
 ## 🚀 Usage
 
-Execute `slidescribe` on any local PDF file:
+Execute `slidescribe` on local PDF files, image files (`.png`, `.jpg`, `.jpeg`, `.webp`), or directories:
 
 ```bash
+# Convert a single PDF file (default behavior)
 slidescribe /path/to/my_lectures/Lec_05_Machine_Learning.pdf
+
+# Convert a single image file
+slidescribe slide_screenshot.png
+
+# Convert a folder containing screenshots/images or PDFs
+slidescribe /path/to/folder_of_slides/
+
+# Merge and compile multiple PDFs and images together into one Markdown file
+slidescribe Lec_05_Part1.pdf Lec_05_Part2.pdf Lec_05_Appendix.png -o Lec_05_Combined
 ```
 
 ### CLI Command Options
 
 | Argument | Description | Default |
 | :--- | :--- | :--- |
-| `target` | Path to the source PDF file. | *Required* |
+| `targets` | Path to the source PDF file(s), image file(s), or directories containing them. | *Required* (one or more) |
 | `--model` | Dynamic Gemini model selection (e.g. `gemini-2.5-pro` or `gemini-2.5-flash`). | `gemini-2.5-flash` |
 | `--no-explanations` | Skips generating AI explanations, extracting text & LaTeX equations extremely fast. | `False` |
 | `--no-contents` | Skips writing the transcribed slide contents to the markdown output. | `False` |
 | `-el`, `--explanation-language` | The language in which to generate the AI explanations (alias: `-l`, `--language`). | `English` |
 | `-tl`, `--transcription-language` | The language in which to transcribe the slide contents (alias: `-t`). | `English` |
 | `-eo`, `--extract-only` | Only extract PDF pages as images and exit without calling the model. | `False` |
+| `-o`, `--output` | Custom destination name or path for the compiled Markdown and slides folder. | `None` |
 | `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
