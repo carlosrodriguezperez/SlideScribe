@@ -151,6 +151,58 @@ def extract_slides(pdf_path: Path, output_dir: Path):
     print(f"Successfully saved {len(images)} slides to '{output_dir}'.")
     return len(images)
 
+def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
+    if output_dir.exists() and output_dir.is_dir():
+        existing_images = list(output_dir.glob("slide_*.png"))
+        if existing_images:
+            print(f"Directory '{output_dir.name}' already exists with {len(existing_images)} slides. Skipping slide extraction.")
+            return len(existing_images)
+            
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    slide_count = 0
+    
+    def process_file(file_path: Path):
+        nonlocal slide_count
+        suffix = file_path.suffix.lower()
+        if suffix == ".pdf":
+            print(f"Rasterizing PDF '{file_path.name}'...")
+            try:
+                images = pdf2image.convert_from_path(str(file_path))
+                for image in images:
+                    slide_count += 1
+                    out_file = output_dir / f"slide_{slide_count}.png"
+                    image.save(out_file, "PNG")
+            except Exception as e:
+                print(f"Error during PDF extraction for '{file_path.name}': {e}", file=sys.stderr)
+        elif suffix in [".png", ".jpg", ".jpeg", ".webp"]:
+            print(f"Copying image '{file_path.name}'...")
+            try:
+                slide_count += 1
+                out_file = output_dir / f"slide_{slide_count}.png"
+                with Image.open(file_path) as img:
+                    img.save(out_file, "PNG")
+            except Exception as e:
+                print(f"Error processing image '{file_path.name}': {e}", file=sys.stderr)
+
+    for target in targets:
+        target = target.resolve()
+        if not target.exists():
+            print(f"Warning: Target '{target}' does not exist. Skipping.", file=sys.stderr)
+            continue
+            
+        if target.is_file():
+            process_file(target)
+        elif target.is_dir():
+            print(f"Scanning directory '{target.name}'...")
+            files = sorted(list(target.iterdir()))
+            for f in files:
+                if f.is_file():
+                    process_file(f)
+                    
+    print(f"Successfully saved {slide_count} slides to '{output_dir}'.")
+    return slide_count
+
 def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
     print(f"Compiling Markdown to '{output_md.name}'...")
     
@@ -262,9 +314,9 @@ def main():
         help="Custom destination name or path for the compiled Markdown and slides folder."
     )
     parser.add_argument(
-        "target",
-        nargs="?",
-        help="Path to the source PDF file."
+        "targets",
+        nargs="+",
+        help="Path to the source PDF file(s), image file(s), or directories containing them."
     )
 
     args = parser.parse_args()
@@ -273,12 +325,13 @@ def main():
         print(__version__)
         sys.exit(0)
     
-    if args.target:
-        target_path = Path(args.target)
+    if args.targets:
+        targets = [Path(t) for t in args.targets]
         load_env()
         check_poppler()
         
         # Calculate output paths
+        first_target = targets[0].resolve()
         if args.output:
             out_base = Path(args.output)
             if out_base.suffix.lower() == ".md":
@@ -286,10 +339,18 @@ def main():
             output_md = out_base.with_suffix(".md")
             output_dir = out_base.parent / f"{out_base.name}_slides"
         else:
-            output_md = target_path.with_suffix(".md")
-            output_dir = target_path.parent / f"{target_path.stem}_slides"
+            if len(targets) == 1:
+                if first_target.is_dir():
+                    output_dir = first_target.parent / f"{first_target.name}_slides"
+                    output_md = first_target.parent / f"{first_target.name}.md"
+                else:
+                    output_md = first_target.with_suffix(".md")
+                    output_dir = first_target.parent / f"{first_target.stem}_slides"
+            else:
+                output_md = first_target.parent / f"{first_target.stem}_merged.md"
+                output_dir = first_target.parent / f"{first_target.stem}_merged_slides"
             
-        num_slides = extract_slides(target_path, output_dir)
+        num_slides = collect_and_extract_slides(targets, output_dir)
         if args.extract_only:
             sys.exit(0)
         compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
