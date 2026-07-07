@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import re
 import time
 import dotenv
 from pathlib import Path
@@ -151,12 +152,16 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
     
     print(f"Compiling Markdown to '{output_md.name}'...")
     
-    # Collect all image paths
+    # Collect all image paths dynamically from the slides directory
+    output_dir = pdf_path.parent / output_dir_name
     image_paths = []
-    for i in range(1, num_slides + 1):
-        slide_file = pdf_path.parent / output_dir_name / f"slide_{i}.png"
-        if slide_file.exists():
-            image_paths.append(slide_file)
+    if output_dir.exists() and output_dir.is_dir():
+        for p in output_dir.glob("slide_*.png"):
+            match = re.match(r"^slide_(\d+)\.png$", p.name)
+            if match:
+                image_paths.append((int(match.group(1)), p))
+        image_paths.sort()
+        image_paths = [p for _, p in image_paths]
             
     if not image_paths:
         print("No slide images found to process.", file=sys.stderr)
@@ -164,8 +169,9 @@ def compile_markdown(pdf_path: Path, num_slides: int, model_name: str, no_explan
 
     all_parsed_slides = []
     chunk_size = 15
-    for chunk_start in range(1, num_slides + 1, chunk_size):
-        chunk_end = min(chunk_start + chunk_size - 1, num_slides)
+    num_images = len(image_paths)
+    for chunk_start in range(1, num_images + 1, chunk_size):
+        chunk_end = min(chunk_start + chunk_size - 1, num_images)
         try:
             parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, language, transcription_language)
             all_parsed_slides.extend(parsed_chunk)
