@@ -103,6 +103,7 @@ slidescribe Lec_05_Part1.pdf Lec_05_Part2.pdf Lec_05_Appendix.png -o Lec_05_Comb
 | `-tl`, `--transcription-language` | The language in which to transcribe the slide contents (alias: `-t`). | `English` |
 | `-eo`, `--extract-only` | Only extract PDF pages as images and exit without calling the model. | `False` |
 | `-o`, `--output` | Custom destination name or path for the compiled Markdown and slides folder. | `None` |
+| `-dd`, `--detect-diagrams` | Detect, crop, and embed diagrams and charts from slides. | `False` |
 | `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 

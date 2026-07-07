@@ -25,6 +25,13 @@ def load_env():
         if env_path.exists():
             dotenv.load_dotenv(env_path)
 
+class DiagramBoundingBox(BaseModel):
+    ymin: int = Field(description="Normalized y-coordinate of the top edge of the diagram (0 to 1000).")
+    xmin: int = Field(description="Normalized x-coordinate of the left edge of the diagram (0 to 1000).")
+    ymax: int = Field(description="Normalized y-coordinate of the bottom edge of the diagram (0 to 1000).")
+    xmax: int = Field(description="Normalized x-coordinate of the right edge of the diagram (0 to 1000).")
+    label: str = Field(description="A short label/description of the diagram (e.g. 'flowchart', 'architecture diagram', 'data graph').")
+
 class SlideParsed(BaseModel):
     page_number: int = Field(
         description="The 1-based index of this slide in the provided list of images (e.g. 1 for the first image, 2 for the second, etc.)."
@@ -35,6 +42,10 @@ class SlideParsed(BaseModel):
     slide_title: str
     transcribed_content: str
     synthesized_explanation: str
+    diagrams: list[DiagramBoundingBox] = Field(
+        default=[],
+        description="A list of diagrams, graphs, charts, or illustrations found on this slide. If no diagrams are present, leave this list empty."
+    )
 
 class SlideDeck(BaseModel):
     slides: list[SlideParsed]
@@ -45,6 +56,7 @@ def analyze_slides(
     end_slide: int, 
     model_name: str, 
     no_explanations: bool,
+    detect_diagrams: bool,
     language: str = "English",
     transcription_language: str = "English"
 ) -> list[SlideParsed]:
@@ -62,6 +74,13 @@ def analyze_slides(
         "since explanations are disabled, do not write explanations and set the synthesized_explanation field to an empty string."
     )
     
+    diagram_system_instruction = ""
+    if detect_diagrams:
+        diagram_system_instruction = (
+            "\n   - **Diagram Placeholders**: If you identify any diagrams, charts, graphs, or illustrations on a slide, you MUST "
+            "insert a placeholder `[DIAGRAM_{index}]` (e.g. `[DIAGRAM_0]` for the first diagram in the diagrams list, `[DIAGRAM_1]` for the second, etc.) "
+            "at the exact position in the `transcribed_content` text where that diagram is located in the flow of the slide content."
+        )
     system_instruction = (
         "Analyze the slide images provided and transcribe their contents accurately into clean, well-formatted Markdown and LaTeX, adhering to these guidelines:\n"
         f"   - **Language**: All text, titles, and headers in the `transcribed_content` and `slide_title` fields must be written in {transcription_language}. If the original text on the slides is in a different language, translate it into {transcription_language} while maintaining the exact meaning.\n"
@@ -71,14 +90,24 @@ def analyze_slides(
         "   - **Block Math**: Use block LaTeX (`$$...$$`) on their own lines for complex, multiline, or prominent equations. Ensure there is an empty line before and after the block math so it renders correctly.\n"
         "   - **Underscores & Formatting**: Ensure underscores (`_`) used for subscripts (e.g., `$x_{t}$` or `$\\mu_{A}$`) are always enclosed within math delimiters to avoid conflicts with Markdown italicization.\n"
         "   - **No Meta/Descriptions**: Do not include physical descriptions of images, diagrams, or UI elements (like \"[Image of...]\") in the transcription unless they contain readable text or formulas. Exclude header/footer noise (e.g. copyright notices, slide numbers) if they do not contribute to the educational content."
+        f"{diagram_system_instruction}"
     )
 
+    diagram_prompt_instruction = (
+        "Additionally, for each slide, analyze and identify all diagrams, graphs, charts, or drawings. "
+        "Locate their bounding boxes normalized from 0 to 1000 in the format [ymin, xmin, ymax, xmax] "
+        "and add them to the `diagrams` list field with a short, descriptive label. For each diagram you add, "
+        "make sure to insert its placeholder (e.g., `[DIAGRAM_0]`) in the `transcribed_content` text."
+        if detect_diagrams else
+        "Since diagram detection is disabled, do not detect diagrams and set the `diagrams` list field to an empty list."
+    )
     prompt = (
         f"You are given all the slides of the presentation for global context to understand the structure of the lecture.\n"
         f"Please analyze the images labeled 'Image {start_slide}' to 'Image {end_slide}' (inclusive, based on the labels provided above).\n\n"
         f"For each of these specified slides: set the `page_number` field in the response schema to the number corresponding to its label "
         f"(e.g., for 'Image 3', set `page_number` to 3), extract the title, transcribe all text and mathematical formulas accurately "
-        f"into the transcribed_content field following the system guidelines, and {explanation_instruction}"
+        f"into the transcribed_content field following the system guidelines, and {explanation_instruction} "
+        f"{diagram_prompt_instruction}"
     )
     contents.append(prompt)
     
@@ -203,11 +232,10 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
     print(f"Successfully saved {slide_count} slides to '{output_dir}'.")
     return slide_count
 
-def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
+def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, detect_diagrams: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
     print(f"Compiling Markdown to '{output_md.name}'...")
     
     # Collect all image paths dynamically from the slides directory
-    output_dir = pdf_path.parent / output_dir_name
     image_paths = []
     if output_dir.exists() and output_dir.is_dir():
         for p in output_dir.glob("slide_*.png"):
@@ -227,7 +255,7 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
     for chunk_start in range(1, num_images + 1, chunk_size):
         chunk_end = min(chunk_start + chunk_size - 1, num_images)
         try:
-            parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, language, transcription_language)
+            parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, detect_diagrams, language, transcription_language)
             all_parsed_slides.extend(parsed_chunk)
         except Exception as e:
             print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
@@ -308,6 +336,12 @@ def main():
         help="Only extract PDF pages as images and exit without calling the model."
     )
     parser.add_argument(
+        "--detect-diagrams",
+        "-dd",
+        action="store_true",
+        help="Detect, crop, and embed diagrams and charts from slides."
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -353,7 +387,7 @@ def main():
         num_slides = collect_and_extract_slides(targets, output_dir)
         if args.extract_only:
             sys.exit(0)
-        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.language, args.transcription_language, args.no_contents)
+        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents)
         sys.exit(0)
     
     parser.print_help()
