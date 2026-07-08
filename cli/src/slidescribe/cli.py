@@ -43,8 +43,7 @@ class SlideParsed(BaseModel):
     transcribed_content: str
     synthesized_explanation: str
     diagrams: list[DiagramBoundingBox] = Field(
-        default=[],
-        description="A list of diagrams, graphs, charts, or illustrations found on this slide. If no diagrams are present, leave this list empty."
+        description="A list of diagrams, graphs, charts, or illustrations found on this slide. If no diagrams are present, return an empty list."
     )
 
 class SlideDeck(BaseModel):
@@ -95,8 +94,14 @@ def analyze_slides(
 
     diagram_prompt_instruction = (
         "Additionally, for each slide, analyze and identify all diagrams, graphs, charts, or drawings. "
-        "Locate their bounding boxes normalized from 0 to 1000 in the format [ymin, xmin, ymax, xmax] "
-        "and add them to the `diagrams` list field with a short, descriptive label. For each diagram you add, "
+        "Locate their bounding boxes normalized from 0 to 1000 in the format [ymin, xmin, ymax, xmax].\n"
+        "CRITICAL BOUNDING BOX RULES:\n"
+        "1. Be extremely generous with the bounding box boundaries so no part of the diagram is cropped.\n"
+        "2. Do NOT include textual mathematical equations, text paragraphs, or standalone formulas in the bounding box of a diagram. "
+        "The bounding box must strictly enclose only the graphical drawings, charts, or illustrations (and any labels embedded directly inside them). "
+        "For example, if a slide has a flowchart/drawing on one side and math equations on another, the bounding box must only cover the flowchart/drawing.\n"
+        "3. Ignore decorative slide background templates, themes, watermarks, or background patterns (such as background curves, waves, or diagonal lines). The bounding box must only focus on the actual foreground diagram content.\n\n"
+        "Add the diagrams to the `diagrams` list field with a short, descriptive label. For each diagram you add, "
         "make sure to insert its placeholder (e.g., `[DIAGRAM_0]`) in the `transcribed_content` text."
         if detect_diagrams else
         "Since diagram detection is disabled, do not detect diagrams and set the `diagrams` list field to an empty list."
@@ -270,8 +275,10 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
         for parsed in all_parsed_slides:
             idx = parsed.page_number
             if 1 <= idx <= len(image_paths):
-                slide_file_name = image_paths[idx - 1].name
+                slide_file_path = image_paths[idx - 1]
+                slide_file_name = slide_file_path.name
             else:
+                slide_file_path = None
                 slide_file_name = f"slide_{parsed.slide_number}.png"
             
             f.write(f"## Slide {parsed.slide_number}: {parsed.slide_title}\n\n")
@@ -279,8 +286,43 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
             if not no_explanations:
                 f.write(f"**🤖 AI Synthesized Explanation:**\n*{parsed.synthesized_explanation}*\n\n")
                 
+            unplaced_diagrams = []
+            if detect_diagrams and parsed.diagrams and slide_file_path and slide_file_path.exists():
+                try:
+                    with Image.open(slide_file_path) as img:
+                        width, height = img.size
+                        for k, diag in enumerate(parsed.diagrams):
+                            # Add a 3% padding (safety margin) to handle minor model coordinate inaccuracies
+                            x_pad = int(width * 0.03)
+                            y_pad = int(height * 0.03)
+                            
+                            left = max(0, int(diag.xmin * width / 1000) - x_pad)
+                            top = max(0, int(diag.ymin * height / 1000) - y_pad)
+                            right = min(width, int(diag.xmax * width / 1000) + x_pad)
+                            bottom = min(height, int(diag.ymax * height / 1000) + y_pad)
+                            
+                            if right > left and bottom > top:
+                                cropped = img.crop((left, top, right, bottom))
+                                crop_name = f"slide_{idx}_diagram_{k+1}.png"
+                                crop_path = output_dir / crop_name
+                                cropped.save(crop_path, "PNG")
+                                
+                                md_img_link = f"![{diag.label}](./{output_dir.name}/{crop_name})"
+                                placeholder = rf"\[DIAGRAM_{k}\]"
+                                new_content, count = re.subn(placeholder, md_img_link, parsed.transcribed_content)
+                                if count > 0:
+                                    parsed.transcribed_content = new_content
+                                else:
+                                    unplaced_diagrams.append(md_img_link)
+                except Exception as e:
+                    print(f"Warning: Failed to crop diagrams on slide {idx}: {e}", file=sys.stderr)
+            
             if not no_contents:
                 f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
+                if unplaced_diagrams:
+                    f.write("#### Slide Diagrams\n")
+                    for link in unplaced_diagrams:
+                        f.write(f"{link}\n\n")
                 
             f.write(f"![Slide {parsed.slide_number} View](./{output_dir.name}/{slide_file_name})\n\n")
             f.write("***\n\n")
