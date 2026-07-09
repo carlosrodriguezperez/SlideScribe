@@ -3,6 +3,7 @@ import sys
 import os
 import re
 import time
+import json
 import dotenv
 from pathlib import Path
 import pdf2image
@@ -237,7 +238,7 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
     print(f"Successfully saved {slide_count} slides to '{output_dir}'.")
     return slide_count
 
-def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, detect_diagrams: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False):
+def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, detect_diagrams: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False, force: bool = False):
     print(f"Compiling Markdown to '{output_md.name}'...")
     
     # Collect all image paths dynamically from the slides directory
@@ -254,14 +255,90 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
         print("No slide images found to process.", file=sys.stderr)
         return
 
-    all_parsed_slides = []
+    cache_path = output_dir / ".slidescribe_cache.json"
+    
+    # Handle force flag: delete existing cache if it exists
+    if force:
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+                print("Force flag specified. Existing cache file deleted.")
+            except Exception as e:
+                print(f"Warning: Failed to delete cache file under force flag: {e}", file=sys.stderr)
+        loaded_slides = []
+    else:
+        loaded_slides = []
+        if cache_path.exists():
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cache_data = json.load(f)
+                
+                cached_meta = cache_data.get("metadata", {})
+                meta_matches = (
+                    cached_meta.get("model") == model_name and
+                    cached_meta.get("no_explanations") == no_explanations and
+                    cached_meta.get("detect_diagrams") == detect_diagrams and
+                    cached_meta.get("language") == language and
+                    cached_meta.get("transcription_language") == transcription_language
+                )
+                
+                if meta_matches:
+                    raw_slides = cache_data.get("slides", [])
+                    loaded_slides = [SlideParsed(**s) for s in raw_slides]
+                    print(f"Loaded {len(loaded_slides)} parsed slides from cache.")
+                else:
+                    print("Cache configuration mismatch. Invalidation of previous cache. Starting fresh.")
+                    try:
+                        cache_path.unlink()
+                    except Exception as e:
+                        print(f"Warning: Failed to delete mismatching cache file: {e}", file=sys.stderr)
+            except Exception as e:
+                print(f"Warning: Could not read cache file ({e}). Starting fresh.")
+                try:
+                    if cache_path.exists():
+                        cache_path.unlink()
+                except Exception:
+                    pass
+
+    all_parsed_slides = loaded_slides.copy()
+    cached_pages = {s.page_number for s in all_parsed_slides}
     chunk_size = 15
     num_images = len(image_paths)
+    
     for chunk_start in range(1, num_images + 1, chunk_size):
         chunk_end = min(chunk_start + chunk_size - 1, num_images)
+        chunk_pages = set(range(chunk_start, chunk_end + 1))
+        
+        if chunk_pages.issubset(cached_pages):
+            print(f"Slides {chunk_start}-{chunk_end} already parsed (loaded from cache).")
+            continue
+            
         try:
             parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, detect_diagrams, language, transcription_language)
-            all_parsed_slides.extend(parsed_chunk)
+            
+            # Map slides by page to prevent duplicates and keep sorted order
+            slides_by_page = {s.page_number: s for s in all_parsed_slides}
+            for s in parsed_chunk:
+                slides_by_page[s.page_number] = s
+            all_parsed_slides = list(slides_by_page.values())
+            
+            # Save updated cache
+            cache_data = {
+                "metadata": {
+                    "model": model_name,
+                    "no_explanations": no_explanations,
+                    "detect_diagrams": detect_diagrams,
+                    "language": language,
+                    "transcription_language": transcription_language,
+                },
+                "slides": [slide.model_dump() for slide in all_parsed_slides]
+            }
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                print(f"Warning: Failed to write cache file: {e}", file=sys.stderr)
+                
         except Exception as e:
             print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
             return
@@ -327,6 +404,13 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
             f.write(f"![Slide {parsed.slide_number} View](./{output_dir.name}/{slide_file_name})\n\n")
             f.write("***\n\n")
             
+    # Delete cache file on successful compilation
+    if cache_path.exists():
+        try:
+            cache_path.unlink()
+        except Exception as e:
+            print(f"Warning: Failed to delete cache file upon completion: {e}", file=sys.stderr)
+
     print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
 
 def main():
@@ -390,6 +474,12 @@ def main():
         help="Custom destination name or path for the compiled Markdown and slides folder."
     )
     parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force regeneration of all slides, ignoring and deleting any existing cache."
+    )
+    parser.add_argument(
         "targets",
         nargs="+",
         help="Path to the source PDF file(s), image file(s), or directories containing them."
@@ -429,7 +519,7 @@ def main():
         num_slides = collect_and_extract_slides(targets, output_dir)
         if args.extract_only:
             sys.exit(0)
-        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents)
+        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force)
         sys.exit(0)
     
     parser.print_help()
