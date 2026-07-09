@@ -40,8 +40,8 @@
 To run `slidescribe` globally from any terminal, it is highly recommended to install it using [`pipx`](https://pipx.pypa.io/). This isolates the tool's dependencies while exposing the command system-wide.
 
 ```bash
-git clone https://github.com/carlosrodriguezperez/SlideScribe-CLI.git
-cd SlideScribe-CLI
+git clone https://github.com/carlosrodriguezperez/SlideScribe.git
+cd SlideScribe/cli
 pipx install -e .
 ```
 
