@@ -13,9 +13,10 @@
 * **Zero-UI Philosophy:** Pure terminal-based execution. Perfect for automation, scripting, and piping.
 * **Global Context-Aware Chunking:** Loads and transmits all slide images in every request to provide Gemini with complete lecture context, while chunking the output generation (in batches of 15 slides) to safely stay within Gemini's 8,192 output token limit.
 * **OCR & LaTeX Salvaging:** Automatically recovers blurry slide math equations and represents them in standard LaTeX formatting (both inline `$ ... $` and block `$$ ... $$`).
+* **Incremental Caching & Resilience:** Saves progress after each successfully parsed chunk of slides. If a run is interrupted or fails, running the command again will automatically resume from the last successful chunk, saving API costs and time. The temporary cache is automatically cleaned up upon successful completion.
 * **Rigorous Technical Explanations:** Generates highly technical, detailed, and mathematically rigorous explanations for each slide to synthesize core academic concepts, even if the slides themselves are visually sparse.
 * **CLI & Language Flexibility:** Customize both the explanation and transcription languages dynamically, change models, or disable explanations entirely.
-* **Resilient Network Architecture:** Automatically retries API calls (up to 3 times with exponential backoff) to handle transient internet or API connectivity issues seamlessly.
+* **Resilient Network Architecture:** Automatically retries API calls (up to 3 times per chunk with exponential backoff) to handle transient internet or API connectivity issues seamlessly.
 * **Relative Path Immortality:** Built entirely with `pathlib`. Slide assets and Markdown notes sit side-by-side using forward slashes, ensuring they stay perfectly linked on GitHub, Google Drive, Obsidian, or other devices.
 
 ---
@@ -104,6 +105,7 @@ slidescribe Lec_05_Part1.pdf Lec_05_Part2.pdf Lec_05_Appendix.png -o Lec_05_Comb
 | `-eo`, `--extract-only` | Only extract PDF pages as images and exit without calling the model. | `False` |
 | `-o`, `--output` | Custom destination name or path for the compiled Markdown and slides folder. | `None` |
 | `-dd`, `--detect-diagrams` | Detect, crop, and embed diagrams and charts from slides. | `False` |
+| `-f`, `--force` | Force regeneration of all slides, ignoring and deleting any existing cache. | `False` |
 | `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
