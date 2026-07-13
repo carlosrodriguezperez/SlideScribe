@@ -106,6 +106,9 @@ slidescribe Lec_05_Part1.pdf Lec_05_Part2.pdf Lec_05_Appendix.png -o Lec_05_Comb
 | `-o`, `--output` | Custom destination name or path for the compiled Markdown and slides folder. | `None` |
 | `-dd`, `--detect-diagrams` | Detect, crop, and embed diagrams and charts from slides. | `False` |
 | `-f`, `--force` | Force regeneration of all slides, ignoring and deleting any existing cache. | `False` |
+| `--dpi` | DPI to use when rasterizing PDF slides (helps reduce folder size). | `150` |
+| `--no-files-api` | Disable using the Gemini Files API and upload files inline in the payload instead. | `False` |
+| `--global-context-limit` | Limit the global context window to N slides before and after the chunk. | `None` |
 | `--version` | Prints the version number (`0.2.0`) and exits. | N/A |
 | `-h`, `--help` | Show help menu. | N/A |
 
