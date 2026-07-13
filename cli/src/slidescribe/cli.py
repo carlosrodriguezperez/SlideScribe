@@ -11,7 +11,7 @@ from pdf2image.exceptions import PDFInfoNotInstalledError
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageFilter, ImageStat
 
 from slidescribe import __version__
 
@@ -58,15 +58,32 @@ def analyze_slides(
     no_explanations: bool,
     detect_diagrams: bool,
     language: str = "English",
-    transcription_language: str = "English"
+    transcription_language: str = "English",
+    client: genai.Client = None,
+    uploaded_files: list = None,
+    global_context_limit: int = None
 ) -> list[SlideParsed]:
-    client = genai.Client()
+    if client is None:
+        client = genai.Client()
     print(f"Analyzing slides {start_slide} to {end_slide} using {model_name}...")
     
     contents = []
-    for i, path in enumerate(image_paths, start=1):
+    num_images = len(image_paths)
+    
+    # Determine the slice of slides to pass as context
+    if global_context_limit is not None:
+        start_idx = max(1, start_slide - global_context_limit)
+        end_idx = min(num_images, end_slide + global_context_limit)
+    else:
+        start_idx = 1
+        end_idx = num_images
+
+    for i in range(start_idx, end_idx + 1):
         contents.append(f"Image {i}:")
-        contents.append(Image.open(path))
+        if uploaded_files:
+            contents.append(uploaded_files[i - 1])
+        else:
+            contents.append(Image.open(image_paths[i - 1]))
         
     explanation_instruction = (
         f"provide a 1-2 paragraph highly technical, detailed, and mathematically rigorous (where applicable) explanation of the concepts shown in {language}. Focus on the underlying theory, formal definitions, and mechanisms."
@@ -158,7 +175,41 @@ def check_poppler():
     except Exception:
         pass
 
-def extract_slides(pdf_path: Path, output_dir: Path):
+def optimize_and_save_image(img: Image.Image, out_file: Path):
+    """
+    Optimizes and saves the PIL Image as a PNG.
+    Calculates edge density to adaptively resize low-complexity slides (title/ending slides)
+    to a max dimension of 1000px, and high-complexity slides (text/diagrams) to a max dimension of 1600px.
+    Enables PNG saving optimization.
+    """
+    try:
+        edges = img.convert("L").filter(ImageFilter.FIND_EDGES)
+        edge_mean = ImageStat.Stat(edges).mean[0]
+    except Exception as e:
+        print(f"Warning: Complexity analysis failed: {e}. Defaulting to high complexity.", file=sys.stderr)
+        edge_mean = 99.0
+
+    if edge_mean < 5.0:
+        max_dim = 1000
+    else:
+        max_dim = 1600
+
+    width, height = img.size
+    if width > max_dim or height > max_dim:
+        if width > height:
+            new_width = max_dim
+            new_height = int(height * (max_dim / width))
+        else:
+            new_height = max_dim
+            new_width = int(width * (max_dim / height))
+
+        resample_filter = getattr(Image, "Resampling", None)
+        filter_type = resample_filter.LANCZOS if resample_filter else getattr(Image, "LANCZOS", Image.BICUBIC)
+        img = img.resize((new_width, new_height), filter_type)
+
+    img.save(out_file, "PNG", optimize=True)
+
+def extract_slides(pdf_path: Path, output_dir: Path, dpi: int = 150):
     pdf_path = pdf_path.resolve()
     if not pdf_path.exists() or not pdf_path.is_file():
         print(f"Error: Target file '{pdf_path}' does not exist or is not a file.", file=sys.stderr)
@@ -174,19 +225,19 @@ def extract_slides(pdf_path: Path, output_dir: Path):
     
     print(f"Rasterizing '{pdf_path.name}'...")
     try:
-        images = pdf2image.convert_from_path(str(pdf_path))
+        images = pdf2image.convert_from_path(str(pdf_path), dpi=dpi)
     except Exception as e:
         print(f"Error during PDF extraction: {e}", file=sys.stderr)
         sys.exit(1)
         
     for i, image in enumerate(images, start=1):
         out_file = output_dir / f"slide_{i}.png"
-        image.save(out_file, "PNG")
+        optimize_and_save_image(image, out_file)
         
     print(f"Successfully saved {len(images)} slides to '{output_dir}'.")
     return len(images)
 
-def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
+def collect_and_extract_slides(targets: list[Path], output_dir: Path, dpi: int = 150) -> int:
     if output_dir.exists() and output_dir.is_dir():
         existing_images = list(output_dir.glob("slide_*.png"))
         if existing_images:
@@ -203,11 +254,11 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
         if suffix == ".pdf":
             print(f"Rasterizing PDF '{file_path.name}'...")
             try:
-                images = pdf2image.convert_from_path(str(file_path))
+                images = pdf2image.convert_from_path(str(file_path), dpi=dpi)
                 for image in images:
                     slide_count += 1
                     out_file = output_dir / f"slide_{slide_count}.png"
-                    image.save(out_file, "PNG")
+                    optimize_and_save_image(image, out_file)
             except Exception as e:
                 print(f"Error during PDF extraction for '{file_path.name}': {e}", file=sys.stderr)
         elif suffix in [".png", ".jpg", ".jpeg", ".webp"]:
@@ -216,7 +267,7 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
                 slide_count += 1
                 out_file = output_dir / f"slide_{slide_count}.png"
                 with Image.open(file_path) as img:
-                    img.save(out_file, "PNG")
+                    optimize_and_save_image(img, out_file)
             except Exception as e:
                 print(f"Error processing image '{file_path.name}': {e}", file=sys.stderr)
 
@@ -238,7 +289,7 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
     print(f"Successfully saved {slide_count} slides to '{output_dir}'.")
     return slide_count
 
-def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, detect_diagrams: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False, force: bool = False):
+def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_explanations: bool, detect_diagrams: bool, language: str = "English", transcription_language: str = "English", no_contents: bool = False, force: bool = False, no_files_api: bool = False, global_context_limit: int = None):
     print(f"Compiling Markdown to '{output_md.name}'...")
     
     # Collect all image paths dynamically from the slides directory
@@ -305,113 +356,155 @@ def compile_markdown(output_md: Path, output_dir: Path, model_name: str, no_expl
     chunk_size = 15
     num_images = len(image_paths)
     
+    # Determine which chunks actually need processing
+    chunks_to_process = []
     for chunk_start in range(1, num_images + 1, chunk_size):
         chunk_end = min(chunk_start + chunk_size - 1, num_images)
         chunk_pages = set(range(chunk_start, chunk_end + 1))
-        
-        if chunk_pages.issubset(cached_pages):
-            print(f"Slides {chunk_start}-{chunk_end} already parsed (loaded from cache).")
-            continue
-            
+        if not chunk_pages.issubset(cached_pages):
+            chunks_to_process.append((chunk_start, chunk_end))
+
+    # Initialize client and upload files if we have chunks to process
+    client = genai.Client()
+    uploaded_files = []
+    if chunks_to_process and not no_files_api:
         try:
-            parsed_chunk = analyze_slides(image_paths, chunk_start, chunk_end, model_name, no_explanations, detect_diagrams, language, transcription_language)
-            
-            # Map slides by page to prevent duplicates and keep sorted order
-            slides_by_page = {s.page_number: s for s in all_parsed_slides}
-            for s in parsed_chunk:
-                slides_by_page[s.page_number] = s
-            all_parsed_slides = list(slides_by_page.values())
-            
-            # Save updated cache
-            cache_data = {
-                "metadata": {
-                    "model": model_name,
-                    "no_explanations": no_explanations,
-                    "detect_diagrams": detect_diagrams,
-                    "language": language,
-                    "transcription_language": transcription_language,
-                },
-                "slides": [slide.model_dump() for slide in all_parsed_slides]
-            }
-            try:
-                with open(cache_path, "w", encoding="utf-8") as f:
-                    json.dump(cache_data, f, indent=2, ensure_ascii=False)
-            except Exception as e:
-                print(f"Warning: Failed to write cache file: {e}", file=sys.stderr)
-                
+            for i, path in enumerate(image_paths, start=1):
+                print(f"Uploading slide {i}/{num_images} to Gemini Files API...")
+                uploaded = client.files.upload(file=path)
+                uploaded_files.append(uploaded)
         except Exception as e:
-            print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
-            return
-
-    # Sort parsed slides by page_number just in case they are out of order
-    all_parsed_slides.sort(key=lambda s: s.page_number)
-
-    with open(output_md, "w", encoding="utf-8") as f:
-        f.write(f"# Lecture Notes: {output_md.stem}\n\n***\n\n")
-        
-        for parsed in all_parsed_slides:
-            idx = parsed.page_number
-            if 1 <= idx <= len(image_paths):
-                slide_file_path = image_paths[idx - 1]
-                slide_file_name = slide_file_path.name
-            else:
-                slide_file_path = None
-                slide_file_name = f"slide_{parsed.slide_number}.png"
-            
-            f.write(f"## Slide {parsed.slide_number}: {parsed.slide_title}\n\n")
-            
-            if not no_explanations:
-                f.write(f"**🤖 AI Synthesized Explanation:**\n*{parsed.synthesized_explanation}*\n\n")
-                
-            unplaced_diagrams = []
-            if detect_diagrams and parsed.diagrams and slide_file_path and slide_file_path.exists():
+            print(f"Warning: Failed to upload slides to Gemini Files API: {e}. Falling back to direct payload upload.", file=sys.stderr)
+            # Cleanup any already uploaded files
+            for f in uploaded_files:
                 try:
-                    with Image.open(slide_file_path) as img:
-                        width, height = img.size
-                        for k, diag in enumerate(parsed.diagrams):
-                            # Add a 3% padding (safety margin) to handle minor model coordinate inaccuracies
-                            x_pad = int(width * 0.03)
-                            y_pad = int(height * 0.03)
-                            
-                            left = max(0, int(diag.xmin * width / 1000) - x_pad)
-                            top = max(0, int(diag.ymin * height / 1000) - y_pad)
-                            right = min(width, int(diag.xmax * width / 1000) + x_pad)
-                            bottom = min(height, int(diag.ymax * height / 1000) + y_pad)
-                            
-                            if right > left and bottom > top:
-                                cropped = img.crop((left, top, right, bottom))
-                                crop_name = f"slide_{idx}_diagram_{k+1}.png"
-                                crop_path = output_dir / crop_name
-                                cropped.save(crop_path, "PNG")
-                                
-                                md_img_link = f"![{diag.label}](./{output_dir.name}/{crop_name})"
-                                placeholder = rf"\[DIAGRAM_{k}\]"
-                                new_content, count = re.subn(placeholder, md_img_link, parsed.transcribed_content)
-                                if count > 0:
-                                    parsed.transcribed_content = new_content
-                                else:
-                                    unplaced_diagrams.append(md_img_link)
-                except Exception as e:
-                    print(f"Warning: Failed to crop diagrams on slide {idx}: {e}", file=sys.stderr)
-            
-            if not no_contents:
-                f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
-                if unplaced_diagrams:
-                    f.write("#### Slide Diagrams\n")
-                    for link in unplaced_diagrams:
-                        f.write(f"{link}\n\n")
-                
-            f.write(f"![Slide {parsed.slide_number} View](./{output_dir.name}/{slide_file_name})\n\n")
-            f.write("***\n\n")
-            
-    # Delete cache file on successful compilation
-    if cache_path.exists():
-        try:
-            cache_path.unlink()
-        except Exception as e:
-            print(f"Warning: Failed to delete cache file upon completion: {e}", file=sys.stderr)
+                    client.files.delete(name=f.name)
+                except Exception:
+                    pass
+            uploaded_files = []
 
-    print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
+    try:
+        for chunk_start, chunk_end in chunks_to_process:
+            try:
+                parsed_chunk = analyze_slides(
+                    image_paths,
+                    chunk_start,
+                    chunk_end,
+                    model_name,
+                    no_explanations,
+                    detect_diagrams,
+                    language,
+                    transcription_language,
+                    client=client,
+                    uploaded_files=uploaded_files,
+                    global_context_limit=global_context_limit
+                )
+                
+                # Map slides by page to prevent duplicates and keep sorted order
+                slides_by_page = {s.page_number: s for s in all_parsed_slides}
+                for s in parsed_chunk:
+                    slides_by_page[s.page_number] = s
+                all_parsed_slides = list(slides_by_page.values())
+                
+                # Save updated cache
+                cache_data = {
+                    "metadata": {
+                        "model": model_name,
+                        "no_explanations": no_explanations,
+                        "detect_diagrams": detect_diagrams,
+                        "language": language,
+                        "transcription_language": transcription_language,
+                    },
+                    "slides": [slide.model_dump() for slide in all_parsed_slides]
+                }
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(cache_data, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    print(f"Warning: Failed to write cache file: {e}", file=sys.stderr)
+                    
+            except Exception as e:
+                print(f"Error during batch API request for slides {chunk_start}-{chunk_end}: {e}", file=sys.stderr)
+                return
+
+        # Sort parsed slides by page_number just in case they are out of order
+        all_parsed_slides.sort(key=lambda s: s.page_number)
+
+        with open(output_md, "w", encoding="utf-8") as f:
+            f.write(f"# Lecture Notes: {output_md.stem}\n\n***\n\n")
+            
+            for parsed in all_parsed_slides:
+                idx = parsed.page_number
+                if 1 <= idx <= len(image_paths):
+                    slide_file_path = image_paths[idx - 1]
+                    slide_file_name = slide_file_path.name
+                else:
+                    slide_file_path = None
+                    slide_file_name = f"slide_{parsed.slide_number}.png"
+                
+                f.write(f"## Slide {parsed.slide_number}: {parsed.slide_title}\n\n")
+                
+                if not no_explanations:
+                    f.write(f"**🤖 AI Synthesized Explanation:**\n*{parsed.synthesized_explanation}*\n\n")
+                    
+                unplaced_diagrams = []
+                if detect_diagrams and parsed.diagrams and slide_file_path and slide_file_path.exists():
+                    try:
+                        with Image.open(slide_file_path) as img:
+                            width, height = img.size
+                            for k, diag in enumerate(parsed.diagrams):
+                                # Add a 3% padding (safety margin) to handle minor model coordinate inaccuracies
+                                x_pad = int(width * 0.03)
+                                y_pad = int(height * 0.03)
+                                
+                                left = max(0, int(diag.xmin * width / 1000) - x_pad)
+                                top = max(0, int(diag.ymin * height / 1000) - y_pad)
+                                right = min(width, int(diag.xmax * width / 1000) + x_pad)
+                                bottom = min(height, int(diag.ymax * height / 1000) + y_pad)
+                                
+                                if right > left and bottom > top:
+                                    cropped = img.crop((left, top, right, bottom))
+                                    crop_name = f"slide_{idx}_diagram_{k+1}.png"
+                                    crop_path = output_dir / crop_name
+                                    cropped.save(crop_path, "PNG")
+                                    
+                                    md_img_link = f"![{diag.label}](./{output_dir.name}/{crop_name})"
+                                    placeholder = rf"\[DIAGRAM_{k}\]"
+                                    new_content, count = re.subn(placeholder, md_img_link, parsed.transcribed_content)
+                                    if count > 0:
+                                        parsed.transcribed_content = new_content
+                                    else:
+                                        unplaced_diagrams.append(md_img_link)
+                    except Exception as e:
+                        print(f"Warning: Failed to crop diagrams on slide {idx}: {e}", file=sys.stderr)
+                
+                if not no_contents:
+                    f.write(f"### Slide Contents\n{parsed.transcribed_content}\n\n")
+                    if unplaced_diagrams:
+                        f.write("#### Slide Diagrams\n")
+                        for link in unplaced_diagrams:
+                            f.write(f"{link}\n\n")
+                    
+                f.write(f"![Slide {parsed.slide_number} View](./{output_dir.name}/{slide_file_name})\n\n")
+                f.write("***\n\n")
+                
+        # Delete cache file on successful compilation
+        if cache_path.exists():
+            try:
+                cache_path.unlink()
+            except Exception as e:
+                print(f"Warning: Failed to delete cache file upon completion: {e}", file=sys.stderr)
+
+        print(f"Successfully compiled {len(all_parsed_slides)} slides into '{output_md.name}'.")
+
+    finally:
+        if uploaded_files:
+            print("Cleaning up remote slide files from Gemini Files API...")
+            for f in uploaded_files:
+                try:
+                    client.files.delete(name=f.name)
+                except Exception as e:
+                    print(f"Warning: Failed to delete remote file {f.name} from Files API: {e}", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description="SlideScribe CLI - Convert Lecture PDFs to Markdown")
@@ -480,6 +573,23 @@ def main():
         help="Force regeneration of all slides, ignoring and deleting any existing cache."
     )
     parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="DPI to use when rasterizing PDF slides (default: 150)."
+    )
+    parser.add_argument(
+        "--no-files-api",
+        action="store_true",
+        help="Disable using the Gemini Files API and upload files in the request payload instead."
+    )
+    parser.add_argument(
+        "--global-context-limit",
+        type=int,
+        default=None,
+        help="Limit the global context window to N slides before and after the chunk (default: pass all slides)."
+    )
+    parser.add_argument(
         "targets",
         nargs="+",
         help="Path to the source PDF file(s), image file(s), or directories containing them."
@@ -516,10 +626,10 @@ def main():
                 output_md = first_target.parent / f"{first_target.stem}_merged.md"
                 output_dir = first_target.parent / f"{first_target.stem}_merged_slides"
             
-        num_slides = collect_and_extract_slides(targets, output_dir)
+        num_slides = collect_and_extract_slides(targets, output_dir, dpi=args.dpi)
         if args.extract_only:
             sys.exit(0)
-        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force)
+        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force, no_files_api=args.no_files_api, global_context_limit=args.global_context_limit)
         sys.exit(0)
     
     parser.print_help()
