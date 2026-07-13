@@ -584,6 +584,12 @@ def main():
         help="Disable using the Gemini Files API and upload files in the request payload instead."
     )
     parser.add_argument(
+        "--global-context-limit",
+        type=int,
+        default=None,
+        help="Limit the global context window to N slides before and after the chunk (default: pass all slides)."
+    )
+    parser.add_argument(
         "targets",
         nargs="+",
         help="Path to the source PDF file(s), image file(s), or directories containing them."
@@ -623,7 +629,7 @@ def main():
         num_slides = collect_and_extract_slides(targets, output_dir, dpi=args.dpi)
         if args.extract_only:
             sys.exit(0)
-        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force, no_files_api=args.no_files_api)
+        compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force, no_files_api=args.no_files_api, global_context_limit=args.global_context_limit)
         sys.exit(0)
     
     parser.print_help()
