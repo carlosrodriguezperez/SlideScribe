@@ -11,7 +11,7 @@ from pdf2image.exceptions import PDFInfoNotInstalledError
 from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageFilter, ImageStat
 
 from slidescribe import __version__
 
@@ -158,7 +158,41 @@ def check_poppler():
     except Exception:
         pass
 
-def extract_slides(pdf_path: Path, output_dir: Path):
+def optimize_and_save_image(img: Image.Image, out_file: Path):
+    """
+    Optimizes and saves the PIL Image as a PNG.
+    Calculates edge density to adaptively resize low-complexity slides (title/ending slides)
+    to a max dimension of 1000px, and high-complexity slides (text/diagrams) to a max dimension of 1600px.
+    Enables PNG saving optimization.
+    """
+    try:
+        edges = img.convert("L").filter(ImageFilter.FIND_EDGES)
+        edge_mean = ImageStat.Stat(edges).mean[0]
+    except Exception as e:
+        print(f"Warning: Complexity analysis failed: {e}. Defaulting to high complexity.", file=sys.stderr)
+        edge_mean = 99.0
+
+    if edge_mean < 5.0:
+        max_dim = 1000
+    else:
+        max_dim = 1600
+
+    width, height = img.size
+    if width > max_dim or height > max_dim:
+        if width > height:
+            new_width = max_dim
+            new_height = int(height * (max_dim / width))
+        else:
+            new_height = max_dim
+            new_width = int(width * (max_dim / height))
+
+        resample_filter = getattr(Image, "Resampling", None)
+        filter_type = resample_filter.LANCZOS if resample_filter else getattr(Image, "LANCZOS", Image.BICUBIC)
+        img = img.resize((new_width, new_height), filter_type)
+
+    img.save(out_file, "PNG", optimize=True)
+
+def extract_slides(pdf_path: Path, output_dir: Path, dpi: int = 150):
     pdf_path = pdf_path.resolve()
     if not pdf_path.exists() or not pdf_path.is_file():
         print(f"Error: Target file '{pdf_path}' does not exist or is not a file.", file=sys.stderr)
@@ -174,19 +208,19 @@ def extract_slides(pdf_path: Path, output_dir: Path):
     
     print(f"Rasterizing '{pdf_path.name}'...")
     try:
-        images = pdf2image.convert_from_path(str(pdf_path))
+        images = pdf2image.convert_from_path(str(pdf_path), dpi=dpi)
     except Exception as e:
         print(f"Error during PDF extraction: {e}", file=sys.stderr)
         sys.exit(1)
         
     for i, image in enumerate(images, start=1):
         out_file = output_dir / f"slide_{i}.png"
-        image.save(out_file, "PNG")
+        optimize_and_save_image(image, out_file)
         
     print(f"Successfully saved {len(images)} slides to '{output_dir}'.")
     return len(images)
 
-def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
+def collect_and_extract_slides(targets: list[Path], output_dir: Path, dpi: int = 150) -> int:
     if output_dir.exists() and output_dir.is_dir():
         existing_images = list(output_dir.glob("slide_*.png"))
         if existing_images:
@@ -203,11 +237,11 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
         if suffix == ".pdf":
             print(f"Rasterizing PDF '{file_path.name}'...")
             try:
-                images = pdf2image.convert_from_path(str(file_path))
+                images = pdf2image.convert_from_path(str(file_path), dpi=dpi)
                 for image in images:
                     slide_count += 1
                     out_file = output_dir / f"slide_{slide_count}.png"
-                    image.save(out_file, "PNG")
+                    optimize_and_save_image(image, out_file)
             except Exception as e:
                 print(f"Error during PDF extraction for '{file_path.name}': {e}", file=sys.stderr)
         elif suffix in [".png", ".jpg", ".jpeg", ".webp"]:
@@ -216,7 +250,7 @@ def collect_and_extract_slides(targets: list[Path], output_dir: Path) -> int:
                 slide_count += 1
                 out_file = output_dir / f"slide_{slide_count}.png"
                 with Image.open(file_path) as img:
-                    img.save(out_file, "PNG")
+                    optimize_and_save_image(img, out_file)
             except Exception as e:
                 print(f"Error processing image '{file_path.name}': {e}", file=sys.stderr)
 
@@ -480,6 +514,12 @@ def main():
         help="Force regeneration of all slides, ignoring and deleting any existing cache."
     )
     parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="DPI to use when rasterizing PDF slides (default: 150)."
+    )
+    parser.add_argument(
         "targets",
         nargs="+",
         help="Path to the source PDF file(s), image file(s), or directories containing them."
@@ -516,7 +556,7 @@ def main():
                 output_md = first_target.parent / f"{first_target.stem}_merged.md"
                 output_dir = first_target.parent / f"{first_target.stem}_merged_slides"
             
-        num_slides = collect_and_extract_slides(targets, output_dir)
+        num_slides = collect_and_extract_slides(targets, output_dir, dpi=args.dpi)
         if args.extract_only:
             sys.exit(0)
         compile_markdown(output_md, output_dir, args.model, args.no_explanations, args.detect_diagrams, args.language, args.transcription_language, args.no_contents, args.force)
